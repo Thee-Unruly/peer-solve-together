@@ -14,6 +14,8 @@ import CommunitiesPage from "./pages/CommunitiesPage";
 import AskQuestionPage from "./pages/AskQuestionPage";
 import MyQuestionsPage from "./pages/MyQuestionsPage";
 import StudyPathsPage from "./pages/StudyPathsPage";
+import StudyPathDetailPage from "./pages/StudyPathDetailPage";
+import QuestionDetailPage from "./pages/QuestionDetailPage";
 import AuthPage from "./pages/AuthPage";
 import ProfilePage from "./pages/ProfilePage";
 import NotFound from "./pages/NotFound";
@@ -32,9 +34,11 @@ const App = () => (
               <Route path="/" element={<AppLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="/communities" element={<CommunitiesPage />} />
+                <Route path="/questions/:id" element={<QuestionDetailPage />} />
                 <Route path="/ask" element={<AskQuestionPage />} />
                 <Route path="/my-questions" element={<MyQuestionsPage />} />
                 <Route path="/study-paths" element={<StudyPathsPage />} />
+                <Route path="/study-paths/:id" element={<StudyPathDetailPage />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<NotFound />} />

@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/components/ui/sonner";
 import { 
   Card, 
   CardContent, 
@@ -31,6 +31,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 const formSchema = z.object({
   title: z
@@ -47,9 +49,10 @@ const formSchema = z.object({
 });
 
 export default function AskQuestionPage() {
-  const { toast } = useToast();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [isAiAssistOpen, setIsAiAssistOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -62,17 +65,45 @@ export default function AskQuestionPage() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // In a real app, we would send this data to an API
-    console.log(values);
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!user) {
+      toast.error("You must be logged in to ask a question");
+      navigate("/auth");
+      return;
+    }
 
-    toast({
-      title: "Question submitted!",
-      description: "Your question has been posted successfully.",
-    });
+    setIsSubmitting(true);
     
-    // Navigate to a thank-you page or back to the home page
-    navigate("/");
+    try {
+      // Insert the question into Supabase
+      const { data, error } = await supabase
+        .from("questions")
+        .insert({
+          title: values.title,
+          body: values.content,
+          category: values.subject.toLowerCase(),
+          user_id: user.id,
+          votes: 0,
+        })
+        .select();
+
+      if (error) throw error;
+      
+      toast.success("Question submitted successfully!");
+      
+      // Navigate to the question page or back to home
+      if (data && data[0]) {
+        navigate(`/questions/${data[0].id}`);
+      } else {
+        navigate("/my-questions");
+      }
+      
+    } catch (error) {
+      console.error("Error submitting question:", error);
+      toast.error("Failed to submit question. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function toggleAiAssist() {
@@ -166,9 +197,9 @@ export default function AskQuestionPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="beginner">Beginner</SelectItem>
-                          <SelectItem value="intermediate">Intermediate</SelectItem>
-                          <SelectItem value="advanced">Advanced</SelectItem>
+                          <SelectItem value="Beginner">Beginner</SelectItem>
+                          <SelectItem value="Intermediate">Intermediate</SelectItem>
+                          <SelectItem value="Advanced">Advanced</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -236,7 +267,9 @@ export default function AskQuestionPage() {
               </div>
               
               <div className="flex justify-end">
-                <Button type="submit">Post Question</Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Submitting..." : "Post Question"}
+                </Button>
               </div>
             </form>
           </Form>

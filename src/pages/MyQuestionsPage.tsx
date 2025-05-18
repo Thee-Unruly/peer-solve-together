@@ -1,73 +1,282 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/components/ui/sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function MyQuestionsPage() {
   const [activeTab, setActiveTab] = useState("asked");
+  const [myQuestions, setMyQuestions] = useState<any[]>([]);
+  const [answeredQuestions, setAnsweredQuestions] = useState<any[]>([]);
+  const [savedQuestions, setSavedQuestions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-  // Mock data for questions
-  const myQuestions = [
-    {
-      id: "q1",
-      title: "How do you find the derivative of f(x) = x³ + 2x² - 4x + 1?",
-      excerpt: "I'm struggling with this calculus problem. Can someone explain the steps?",
-      author: { name: "You", avatar: "" },
-      createdAt: "2 hours ago",
-      subject: "Calculus",
-      difficulty: "Intermediate" as const,
-      answersCount: 3,
-    },
-    {
-      id: "q2",
-      title: "What is the significance of the Magna Carta in world history?",
-      excerpt: "I need to write an essay about the Magna Carta and its historical impact.",
-      author: { name: "You", avatar: "" },
-      createdAt: "1 day ago",
-      subject: "History",
-      difficulty: "Beginner" as const,
-      answersCount: 0,
-    },
-  ];
+  useEffect(() => {
+    // Redirect to login if not authenticated
+    if (!user) {
+      toast.error("Please sign in to view your questions");
+      navigate("/auth");
+      return;
+    }
+    
+    // Fetch user's questions and answers
+    fetchUserContent();
+    
+    // Set up real-time subscription
+    const channel = supabase
+      .channel("schema-db-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "questions",
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          fetchUserContent();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "answers"
+        },
+        () => {
+          fetchUserContent();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "votes"
+        },
+        () => {
+          fetchUserContent();
+        }
+      )
+      .subscribe();
 
-  const answeredQuestions = [
-    {
-      id: "q3",
-      title: "How to implement binary search in Python?",
-      excerpt: "I understand the concept but I'm having trouble with the implementation.",
-      author: { name: "Marcus Lee", avatar: "" },
-      createdAt: "5 hours ago",
-      subject: "Programming",
-      difficulty: "Beginner" as const,
-      answersCount: 5,
-    },
-    {
-      id: "q4",
-      title: "What's the difference between mitosis and meiosis?",
-      excerpt: "I'm studying for my biology exam and getting confused between these processes.",
-      author: { name: "Aisha Johnson", avatar: "" },
-      createdAt: "3 days ago",
-      subject: "Biology",
-      difficulty: "Intermediate" as const,
-      answersCount: 3,
-    },
-  ];
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, navigate]);
 
-  const savedQuestions = [
-    {
-      id: "q5",
-      title: "Newton's Second Law of Motion - Application Problem",
-      excerpt: "Need help solving this problem about a block on an inclined plane.",
-      author: { name: "Sophie Wang", avatar: "" },
-      createdAt: "1 day ago",
-      subject: "Physics",
-      difficulty: "Advanced" as const,
-      answersCount: 2,
-    },
-  ];
+  const fetchUserContent = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Fetch questions asked by the user
+      const { data: questionsData, error: questionsError } = await supabase
+        .from("questions")
+        .select(`
+          *,
+          profiles:user_id (
+            username,
+            avatar_url
+          )
+        `)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (questionsError) throw questionsError;
+
+      // Fetch answers by the user to get questions they've answered
+      const { data: answersData, error: answersError } = await supabase
+        .from("answers")
+        .select(`
+          *,
+          questions:question_id (
+            *,
+            profiles:user_id (
+              username,
+              avatar_url
+            )
+          )
+        `)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (answersError) throw answersError;
+
+      // Fetch questions the user has voted on (as "saved")
+      const { data: votesData, error: votesError } = await supabase
+        .from("votes")
+        .select(`
+          *,
+          questions:entity_id (
+            *,
+            profiles:user_id (
+              username,
+              avatar_url
+            )
+          )
+        `)
+        .eq("user_id", user.id)
+        .eq("entity_type", "question")
+        .order("created_at", { ascending: false });
+
+      if (votesError) throw votesError;
+
+      // Process questions asked by user
+      const formattedQuestions = questionsData?.map(question => ({
+        id: question.id,
+        title: question.title,
+        excerpt: question.body || "No description provided",
+        author: {
+          name: question.profiles?.username || user.email || "Anonymous User",
+          avatar: question.profiles?.avatar_url || ""
+        },
+        createdAt: question.created_at || new Date().toISOString(),
+        subject: question.category,
+        difficulty: mapDifficultyFromCategory(question.category),
+        answersCount: 0, // We'll update this later
+        votes: question.votes || 0
+      })) || [];
+
+      // Process questions answered by user
+      const answeredQuestionsList = answersData
+        ?.filter(answer => answer.questions) // Ensure question exists
+        .map(answer => {
+          const question = answer.questions;
+          return {
+            id: question.id,
+            title: question.title,
+            excerpt: question.body || "No description provided",
+            author: {
+              name: question.profiles?.username || "Anonymous User",
+              avatar: question.profiles?.avatar_url || ""
+            },
+            createdAt: question.created_at || new Date().toISOString(),
+            subject: question.category,
+            difficulty: mapDifficultyFromCategory(question.category),
+            answersCount: 0, // Placeholder
+            votes: question.votes || 0
+          };
+        }) || [];
+
+      // Process saved (voted) questions
+      const savedQuestionsList = votesData
+        ?.filter(vote => vote.questions) // Ensure question exists
+        .map(vote => {
+          const question = vote.questions;
+          return {
+            id: question.id,
+            title: question.title,
+            excerpt: question.body || "No description provided",
+            author: {
+              name: question.profiles?.username || "Anonymous User",
+              avatar: question.profiles?.avatar_url || ""
+            },
+            createdAt: question.created_at || new Date().toISOString(),
+            subject: question.category,
+            difficulty: mapDifficultyFromCategory(question.category),
+            answersCount: 0, // Placeholder
+            votes: question.votes || 0,
+            hasVoted: true
+          };
+        }) || [];
+
+      // Get answer counts for all questions
+      const questionIds = [
+        ...formattedQuestions.map(q => q.id),
+        ...answeredQuestionsList.map(q => q.id),
+        ...savedQuestionsList.map(q => q.id)
+      ];
+      
+      if (questionIds.length > 0) {
+        const { data: answerCounts, error: countError } = await supabase
+          .from("answers")
+          .select("question_id, count")
+          .in("question_id", questionIds)
+          .select("question_id")
+          .select("count(*)", { count: "exact", alias: "count" })
+          .group("question_id");
+
+        if (!countError && answerCounts) {
+          // Create a map of question_id to answer count
+          const countMap = answerCounts.reduce((acc, item) => {
+            acc[item.question_id] = item.count;
+            return acc;
+          }, {});
+
+          // Update the answer counts for all question lists
+          formattedQuestions.forEach(q => {
+            q.answersCount = countMap[q.id] || 0;
+          });
+
+          answeredQuestionsList.forEach(q => {
+            q.answersCount = countMap[q.id] || 0;
+          });
+
+          savedQuestionsList.forEach(q => {
+            q.answersCount = countMap[q.id] || 0;
+          });
+        }
+      }
+
+      // Check user votes
+      if (user) {
+        const { data: userVotes } = await supabase
+          .from("votes")
+          .select("entity_id")
+          .eq("user_id", user.id)
+          .eq("entity_type", "question");
+
+        if (userVotes) {
+          const votedQuestionIds = userVotes.map(v => v.entity_id);
+          
+          // Update hasVoted flag for questions the user has voted on
+          formattedQuestions.forEach(q => {
+            q.hasVoted = votedQuestionIds.includes(q.id);
+          });
+          
+          answeredQuestionsList.forEach(q => {
+            q.hasVoted = votedQuestionIds.includes(q.id);
+          });
+        }
+      }
+
+      setMyQuestions(formattedQuestions);
+      setAnsweredQuestions(answeredQuestionsList);
+      setSavedQuestions(savedQuestionsList);
+    } catch (error) {
+      console.error("Error fetching user content:", error);
+      toast.error("Failed to load your questions");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const mapDifficultyFromCategory = (category: string): "Beginner" | "Intermediate" | "Advanced" => {
+    const lowerCaseCategory = (category || "").toLowerCase();
+    
+    if (lowerCaseCategory.includes("advanced") || 
+        lowerCaseCategory.includes("complex") ||
+        lowerCaseCategory.includes("graduate")) {
+      return "Advanced";
+    } else if (lowerCaseCategory.includes("intermediate") ||
+              lowerCaseCategory.includes("college") ||
+              lowerCaseCategory.includes("calculus")) {
+      return "Intermediate";
+    }
+    
+    return "Beginner";
+  };
 
   return (
     <div className="container py-10 px-4 md:px-6">
@@ -99,7 +308,24 @@ export default function MyQuestionsPage() {
         </TabsList>
         
         <TabsContent value="asked" className="mt-0">
-          {myQuestions.length > 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array(3).fill(0).map((_, i) => (
+                <QuestionCard
+                  key={`loading-asked-${i}`}
+                  id=""
+                  title=""
+                  excerpt=""
+                  author={{ name: "", avatar: "" }}
+                  createdAt=""
+                  subject=""
+                  difficulty="Beginner"
+                  answersCount={0}
+                  isLoading={true}
+                />
+              ))}
+            </div>
+          ) : myQuestions.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {myQuestions.map((question) => (
                 <QuestionCard key={question.id} {...question} />
@@ -120,7 +346,24 @@ export default function MyQuestionsPage() {
         </TabsContent>
         
         <TabsContent value="answered" className="mt-0">
-          {answeredQuestions.length > 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array(3).fill(0).map((_, i) => (
+                <QuestionCard
+                  key={`loading-answered-${i}`}
+                  id=""
+                  title=""
+                  excerpt=""
+                  author={{ name: "", avatar: "" }}
+                  createdAt=""
+                  subject=""
+                  difficulty="Beginner"
+                  answersCount={0}
+                  isLoading={true}
+                />
+              ))}
+            </div>
+          ) : answeredQuestions.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {answeredQuestions.map((question) => (
                 <QuestionCard key={question.id} {...question} />
@@ -138,7 +381,24 @@ export default function MyQuestionsPage() {
         </TabsContent>
         
         <TabsContent value="saved" className="mt-0">
-          {savedQuestions.length > 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array(3).fill(0).map((_, i) => (
+                <QuestionCard
+                  key={`loading-saved-${i}`}
+                  id=""
+                  title=""
+                  excerpt=""
+                  author={{ name: "", avatar: "" }}
+                  createdAt=""
+                  subject=""
+                  difficulty="Beginner"
+                  answersCount={0}
+                  isLoading={true}
+                />
+              ))}
+            </div>
+          ) : savedQuestions.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {savedQuestions.map((question) => (
                 <QuestionCard key={question.id} {...question} />

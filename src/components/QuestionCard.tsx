@@ -5,6 +5,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { ThumbsUp } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/components/ui/sonner";
 
 export type DifficultyType = "Beginner" | "Intermediate" | "Advanced";
 
@@ -21,6 +26,8 @@ export interface QuestionCardProps {
   difficulty: DifficultyType;
   answersCount: number;
   isLoading?: boolean;
+  votes?: number;
+  hasVoted?: boolean;
 }
 
 export const QuestionCard: React.FC<QuestionCardProps> = ({
@@ -33,7 +40,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
   difficulty,
   answersCount,
   isLoading = false,
+  votes = 0,
+  hasVoted = false,
 }) => {
+  const { user } = useAuth();
+  const [isVoting, setIsVoting] = React.useState(false);
+  const [currentVotes, setCurrentVotes] = React.useState(votes);
+  const [userHasVoted, setUserHasVoted] = React.useState(hasVoted);
+
   const getDifficultyColor = () => {
     switch (difficulty) {
       case "Beginner":
@@ -44,6 +58,64 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
         return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
+    }
+  };
+
+  const handleVote = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent navigating to the question
+    
+    if (!user) {
+      toast.error("Please sign in to vote");
+      return;
+    }
+
+    setIsVoting(true);
+    
+    try {
+      if (userHasVoted) {
+        // Remove vote
+        const { error } = await supabase
+          .from("votes")
+          .delete()
+          .eq("entity_id", id)
+          .eq("user_id", user.id)
+          .eq("entity_type", "question");
+        
+        if (error) throw error;
+
+        await supabase
+          .from("questions")
+          .update({ votes: currentVotes - 1 })
+          .eq("id", id);
+        
+        setCurrentVotes(prev => prev - 1);
+        setUserHasVoted(false);
+      } else {
+        // Add vote
+        const { error } = await supabase
+          .from("votes")
+          .insert({
+            entity_id: id,
+            entity_type: "question",
+            user_id: user.id,
+            value: 1
+          });
+        
+        if (error) throw error;
+
+        await supabase
+          .from("questions")
+          .update({ votes: currentVotes + 1 })
+          .eq("id", id);
+        
+        setCurrentVotes(prev => prev + 1);
+        setUserHasVoted(true);
+      }
+    } catch (error) {
+      console.error("Error voting:", error);
+      toast.error("Failed to register vote");
+    } finally {
+      setIsVoting(false);
     }
   };
 
@@ -114,6 +186,20 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
           <span className="text-xs text-muted-foreground">
             {new Date(createdAt).toLocaleDateString()}
           </span>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 rounded-full"
+              onClick={handleVote}
+              disabled={isVoting}
+            >
+              <ThumbsUp 
+                className={`h-4 w-4 ${userHasVoted ? "fill-current text-primary" : ""}`} 
+              />
+            </Button>
+            <span className="text-xs font-medium">{currentVotes}</span>
+          </div>
           <span className="text-xs font-medium">
             {answersCount} {answersCount === 1 ? "answer" : "answers"}
           </span>
