@@ -1,14 +1,29 @@
 
+import { useEffect, useState } from "react";
 import { HeroSection } from "@/components/HeroSection";
 import { FeaturesSection } from "@/components/FeaturesSection";
 import { TopicCard } from "@/components/TopicCard";
-import { QuestionCard } from "@/components/QuestionCard";
+import { QuestionCard, DifficultyType } from "@/components/QuestionCard";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Question {
+  id: string;
+  title: string;
+  body: string | null;
+  created_at: string | null;
+  category: string;
+  votes: number | null;
+  profiles: {
+    username: string | null;
+    avatar_url: string | null;
+  } | null;
+}
 
 export default function HomePage() {
-  // Mock data
-  const trendingTopics = [
+  const [trendingTopics, setTrendingTopics] = useState([
     {
       id: "math",
       title: "Mathematics",
@@ -36,40 +51,112 @@ export default function HomePage() {
       tags: ["Python", "Java", "JavaScript"],
       color: "#7E69AB",
     },
-  ];
+  ]);
 
-  const recentQuestions = [
-    {
-      id: "q1",
-      title: "How do you find the derivative of f(x) = x³ + 2x² - 4x + 1?",
-      excerpt: "I'm struggling with this calculus problem. Can someone explain the steps?",
-      author: { name: "Emily Chen", avatar: "" },
-      createdAt: "2 hours ago",
-      subject: "Calculus",
-      difficulty: "Intermediate",
-      answersCount: 3,
-    },
-    {
-      id: "q2",
-      title: "How to implement binary search in Python?",
-      excerpt: "I understand the concept but I'm having trouble with the implementation.",
-      author: { name: "Marcus Lee", avatar: "" },
-      createdAt: "5 hours ago",
-      subject: "Programming",
-      difficulty: "Beginner",
-      answersCount: 5,
-    },
-    {
-      id: "q3",
-      title: "Newton's Second Law of Motion - Application Problem",
-      excerpt: "Need help solving this problem about a block on an inclined plane.",
-      author: { name: "Sophie Wang", avatar: "" },
-      createdAt: "1 day ago",
-      subject: "Physics",
-      difficulty: "Advanced",
-      answersCount: 2,
-    },
-  ];
+  const [recentQuestions, setRecentQuestions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    async function fetchRecentQuestions() {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('questions')
+          .select(`
+            id,
+            title,
+            body,
+            created_at,
+            category,
+            votes,
+            profiles:user_id (
+              username,
+              avatar_url
+            )
+          `)
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        if (error) {
+          throw error;
+        }
+
+        if (data && data.length > 0) {
+          const formattedQuestions = data.map((question: Question) => ({
+            id: question.id,
+            title: question.title,
+            excerpt: question.body || "No description provided",
+            author: { 
+              name: question.profiles?.username || "Anonymous User", 
+              avatar: question.profiles?.avatar_url || "" 
+            },
+            createdAt: question.created_at || new Date().toISOString(),
+            subject: question.category,
+            difficulty: mapDifficulty(question.category),
+            answersCount: Math.floor(Math.random() * 5), // Placeholder until we implement answer counting
+          }));
+          setRecentQuestions(formattedQuestions);
+        } else {
+          // If no questions found, use placeholder data
+          setRecentQuestions([
+            {
+              id: "q1",
+              title: "How do you find the derivative of f(x) = x³ + 2x² - 4x + 1?",
+              excerpt: "I'm struggling with this calculus problem. Can someone explain the steps?",
+              author: { name: "Emily Chen", avatar: "" },
+              createdAt: new Date().toISOString(),
+              subject: "Calculus",
+              difficulty: "Intermediate" as DifficultyType,
+              answersCount: 3,
+            },
+            {
+              id: "q2",
+              title: "How to implement binary search in Python?",
+              excerpt: "I understand the concept but I'm having trouble with the implementation.",
+              author: { name: "Marcus Lee", avatar: "" },
+              createdAt: new Date().toISOString(),
+              subject: "Programming",
+              difficulty: "Beginner" as DifficultyType,
+              answersCount: 5,
+            },
+            {
+              id: "q3",
+              title: "Newton's Second Law of Motion - Application Problem",
+              excerpt: "Need help solving this problem about a block on an inclined plane.",
+              author: { name: "Sophie Wang", avatar: "" },
+              createdAt: new Date().toISOString(),
+              subject: "Physics",
+              difficulty: "Advanced" as DifficultyType,
+              answersCount: 2,
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error("Error fetching questions:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load recent questions. Please try again later.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchRecentQuestions();
+  }, [toast]);
+
+  // Helper function to map subject categories to difficulty levels
+  const mapDifficulty = (category: string): DifficultyType => {
+    const lowerCategory = category.toLowerCase();
+    if (lowerCategory.includes("calculus") || lowerCategory.includes("physics")) {
+      return "Intermediate";
+    } else if (lowerCategory.includes("quantum") || lowerCategory.includes("advanced")) {
+      return "Advanced";
+    }
+    return "Beginner";
+  };
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -107,9 +194,27 @@ export default function HomePage() {
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {recentQuestions.map((question) => (
-              <QuestionCard key={question.id} {...question} />
-            ))}
+            {isLoading ? (
+              // Show skeleton loaders while fetching data
+              Array(3).fill(0).map((_, index) => (
+                <QuestionCard
+                  key={`skeleton-${index}`}
+                  id=""
+                  title=""
+                  excerpt=""
+                  author={{ name: "", avatar: "" }}
+                  createdAt=""
+                  subject=""
+                  difficulty="Beginner"
+                  answersCount={0}
+                  isLoading={true}
+                />
+              ))
+            ) : (
+              recentQuestions.map((question) => (
+                <QuestionCard key={question.id} {...question} />
+              ))
+            )}
           </div>
         </div>
       </section>
