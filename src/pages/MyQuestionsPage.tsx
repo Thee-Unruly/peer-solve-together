@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QuestionCard } from "@/components/QuestionCard";
@@ -212,34 +211,35 @@ export default function MyQuestionsPage() {
       ];
       
       if (questionIds.length > 0) {
-        const { data: answerCounts, error: countError } = await supabase
-          .from("answers")
-          .select("question_id, count")
-          .in("question_id", questionIds)
-          .select("question_id")
-          .count()
-          .group("question_id");
+        // Fix: Use select with count to get answer counts
+        const answerCounts: Record<string, number> = {};
+        
+        // Get counts for each question individually
+        await Promise.all(
+          questionIds.map(async (questionId) => {
+            const { count, error } = await supabase
+              .from("answers")
+              .select("*", { count: "exact", head: true })
+              .eq("question_id", questionId);
+            
+            if (!error && count !== null) {
+              answerCounts[questionId] = count;
+            }
+          })
+        );
 
-        if (!countError && answerCounts) {
-          // Create a map of question_id to answer count
-          const countMap = answerCounts.reduce((acc, item) => {
-            acc[item.question_id] = item.count;
-            return acc;
-          }, {});
+        // Update the answer counts for all question lists
+        formattedQuestions.forEach(q => {
+          q.answersCount = answerCounts[q.id] || 0;
+        });
 
-          // Update the answer counts for all question lists
-          formattedQuestions.forEach(q => {
-            q.answersCount = countMap[q.id] || 0;
-          });
+        answeredQuestionsList.forEach(q => {
+          q.answersCount = answerCounts[q.id] || 0;
+        });
 
-          answeredQuestionsList.forEach(q => {
-            q.answersCount = countMap[q.id] || 0;
-          });
-
-          savedQuestionsList.forEach(q => {
-            q.answersCount = countMap[q.id] || 0;
-          });
-        }
+        savedQuestionsList.forEach(q => {
+          q.answersCount = answerCounts[q.id] || 0;
+        });
       }
 
       // Check user votes
