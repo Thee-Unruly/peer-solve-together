@@ -1,8 +1,8 @@
 
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AuthButtons } from "@/components/AuthButtons";
 
 export function Navbar() {
   const navItems = [
@@ -37,12 +37,7 @@ export function Navbar() {
         
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button asChild variant="outline" className="hidden sm:flex">
-            <Link to="/login">Log In</Link>
-          </Button>
-          <Button asChild>
-            <Link to="/signup">Sign Up</Link>
-          </Button>
+          <AuthButtons />
         </div>
       </div>
     </header>
