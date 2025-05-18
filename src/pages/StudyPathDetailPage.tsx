@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -203,10 +202,9 @@ export default function StudyPathDetailPage() {
           // Get answer counts for these questions
           const { data: answerCounts } = await supabase
             .from('answers')
-            .select('question_id, count')
-            .in('question_id', questionIds)
             .select('question_id')
-            .select('count(*)', { count: 'exact', alias: 'count' })
+            .count()
+            .in('question_id', questionIds)
             .group('question_id');
           
           // Create a map of question_id to answer count

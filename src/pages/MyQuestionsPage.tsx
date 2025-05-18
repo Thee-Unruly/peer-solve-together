@@ -118,19 +118,52 @@ export default function MyQuestionsPage() {
         .from("votes")
         .select(`
           *,
-          questions:entity_id (
-            *,
-            profiles:user_id (
-              username,
-              avatar_url
-            )
-          )
+          entity_id
         `)
         .eq("user_id", user.id)
         .eq("entity_type", "question")
         .order("created_at", { ascending: false });
 
       if (votesError) throw votesError;
+      
+      // Now fetch the actual questions that were voted on
+      let savedQuestionsList: any[] = [];
+      
+      if (votesData && votesData.length > 0) {
+        const votedQuestionIds = votesData.map(vote => vote.entity_id);
+        
+        const { data: savedQuestionsData, error: savedQuestionsError } = await supabase
+          .from("questions")
+          .select(`
+            *,
+            profiles:user_id (
+              username,
+              avatar_url
+            )
+          `)
+          .in("id", votedQuestionIds);
+          
+        if (savedQuestionsError) throw savedQuestionsError;
+        
+        // Process saved questions
+        if (savedQuestionsData) {
+          savedQuestionsList = savedQuestionsData.map(question => ({
+            id: question.id,
+            title: question.title,
+            excerpt: question.body || "No description provided",
+            author: {
+              name: question.profiles?.username || "Anonymous User",
+              avatar: question.profiles?.avatar_url || ""
+            },
+            createdAt: question.created_at || new Date().toISOString(),
+            subject: question.category,
+            difficulty: mapDifficultyFromCategory(question.category),
+            answersCount: 0, // We'll update this later
+            votes: question.votes || 0,
+            hasVoted: true
+          }));
+        }
+      }
 
       // Process questions asked by user
       const formattedQuestions = questionsData?.map(question => ({
@@ -145,7 +178,8 @@ export default function MyQuestionsPage() {
         subject: question.category,
         difficulty: mapDifficultyFromCategory(question.category),
         answersCount: 0, // We'll update this later
-        votes: question.votes || 0
+        votes: question.votes || 0,
+        hasVoted: false // Default value
       })) || [];
 
       // Process questions answered by user
@@ -165,29 +199,8 @@ export default function MyQuestionsPage() {
             subject: question.category,
             difficulty: mapDifficultyFromCategory(question.category),
             answersCount: 0, // Placeholder
-            votes: question.votes || 0
-          };
-        }) || [];
-
-      // Process saved (voted) questions
-      const savedQuestionsList = votesData
-        ?.filter(vote => vote.questions) // Ensure question exists
-        .map(vote => {
-          const question = vote.questions;
-          return {
-            id: question.id,
-            title: question.title,
-            excerpt: question.body || "No description provided",
-            author: {
-              name: question.profiles?.username || "Anonymous User",
-              avatar: question.profiles?.avatar_url || ""
-            },
-            createdAt: question.created_at || new Date().toISOString(),
-            subject: question.category,
-            difficulty: mapDifficultyFromCategory(question.category),
-            answersCount: 0, // Placeholder
             votes: question.votes || 0,
-            hasVoted: true
+            hasVoted: false // Default value
           };
         }) || [];
 
@@ -204,7 +217,7 @@ export default function MyQuestionsPage() {
           .select("question_id, count")
           .in("question_id", questionIds)
           .select("question_id")
-          .select("count(*)", { count: "exact", alias: "count" })
+          .count()
           .group("question_id");
 
         if (!countError && answerCounts) {
