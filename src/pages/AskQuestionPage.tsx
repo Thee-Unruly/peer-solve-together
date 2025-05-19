@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "@/components/ui/use-toast";
 import { 
   Card, 
   CardContent, 
@@ -67,7 +67,11 @@ export default function AskQuestionPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (!user) {
-      toast.error("You must be logged in to ask a question");
+      toast({
+        variant: "destructive",
+        title: "Authentication required",
+        description: "You must be logged in to ask a question"
+      });
       navigate("/auth");
       return;
     }
@@ -75,6 +79,9 @@ export default function AskQuestionPage() {
     setIsSubmitting(true);
     
     try {
+      console.log("Submitting question with values:", values);
+      console.log("Current user:", user);
+      
       // Insert the question into Supabase
       const { data, error } = await supabase
         .from("questions")
@@ -84,12 +91,20 @@ export default function AskQuestionPage() {
           category: values.subject.toLowerCase(),
           user_id: user.id,
           votes: 0,
+          // Add the difficulty level to the insert operation
+          region: values.difficulty,  // Using region field to store difficulty for now
         })
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error details:", error);
+        throw error;
+      }
       
-      toast.success("Question submitted successfully!");
+      toast({
+        title: "Question submitted successfully!",
+        description: "Your question has been posted."
+      });
       
       // Navigate to the question page or back to home
       if (data && data[0]) {
@@ -98,9 +113,13 @@ export default function AskQuestionPage() {
         navigate("/my-questions");
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting question:", error);
-      toast.error("Failed to submit question. Please try again.");
+      toast({
+        variant: "destructive",
+        title: "Failed to submit question",
+        description: error.message || "Please try again"
+      });
     } finally {
       setIsSubmitting(false);
     }

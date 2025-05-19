@@ -19,6 +19,7 @@ import QuestionDetailPage from "./pages/QuestionDetailPage";
 import AuthPage from "./pages/AuthPage";
 import ProfilePage from "./pages/ProfilePage";
 import NotFound from "./pages/NotFound";
+import NewCommunityPage from "./pages/NewCommunityPage";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
               <Route path="/" element={<AppLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="/communities" element={<CommunitiesPage />} />
+                <Route path="/communities/new" element={<NewCommunityPage />} />
                 <Route path="/questions/:id" element={<QuestionDetailPage />} />
                 <Route path="/ask" element={<AskQuestionPage />} />
                 <Route path="/my-questions" element={<MyQuestionsPage />} />

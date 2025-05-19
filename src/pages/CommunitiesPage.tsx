@@ -1,12 +1,13 @@
-
 import { useState, useEffect } from "react";
 import { TopicCard } from "@/components/TopicCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
+import { Search, PlusCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "@/components/ui/use-toast";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Community {
   id: string;
@@ -22,6 +23,7 @@ export default function CommunitiesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [communities, setCommunities] = useState<Community[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
     async function fetchCommunities() {
@@ -189,7 +191,17 @@ export default function CommunitiesPage() {
   return (
     <div className="container py-10 px-4 md:px-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-3xl font-bold">Communities</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Communities</h1>
+          {user && (
+            <Link to="/communities/new">
+              <Button className="flex items-center gap-2">
+                <PlusCircle className="h-4 w-4" />
+                New Community
+              </Button>
+            </Link>
+          )}
+        </div>
         <p className="text-muted-foreground pb-4">
           Explore and join topic-specific communities where you can connect with peers and experts.
         </p>
