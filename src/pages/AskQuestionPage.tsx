@@ -82,6 +82,29 @@ export default function AskQuestionPage() {
       console.log("Submitting question with values:", values);
       console.log("Current user:", user);
       
+      // Check if user profile exists
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      // If profile doesn't exist, create one
+      if (!profileData) {
+        console.log("Creating new profile for user:", user.id);
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            username: user.email?.split('@')[0] || 'user',
+          });
+          
+        if (profileError) {
+          console.error("Error creating profile:", profileError);
+          throw profileError;
+        }
+      }
+      
       // Insert the question into Supabase
       const { data, error } = await supabase
         .from("questions")
@@ -91,8 +114,7 @@ export default function AskQuestionPage() {
           category: values.subject.toLowerCase(),
           user_id: user.id,
           votes: 0,
-          // Add the difficulty level to the insert operation
-          region: values.difficulty,  // Using region field to store difficulty for now
+          region: values.difficulty,  // Using region field to store difficulty
         })
         .select();
 

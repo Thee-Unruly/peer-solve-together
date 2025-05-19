@@ -1,58 +1,58 @@
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardHeader, 
-  CardTitle 
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { 
-  Form, 
-  FormControl, 
-  FormDescription, 
-  FormField, 
-  FormItem, 
-  FormLabel, 
-  FormMessage 
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { HexColorPicker } from "react-colorful";
 
+// Define form schema with validation rules
 const formSchema = z.object({
   name: z
     .string()
-    .min(3, { message: "Community name must be at least 3 characters long" })
-    .max(50, { message: "Community name cannot exceed 50 characters" }),
+    .min(3, { message: "Name must be at least 3 characters long" })
+    .max(50, { message: "Name cannot exceed 50 characters" }),
   slug: z
     .string()
     .min(3, { message: "Slug must be at least 3 characters long" })
-    .max(50, { message: "Slug cannot exceed 50 characters" })
-    .regex(/^[a-z0-9-]+$/, { 
-      message: "Slug can only contain lowercase letters, numbers, and hyphens" 
-    }),
+    .max(30, { message: "Slug cannot exceed 30 characters" })
+    .regex(/^[a-z0-9-]+$/, { message: "Slug can only contain lowercase letters, numbers, and hyphens" }),
   description: z
     .string()
     .min(10, { message: "Description must be at least 10 characters long" })
     .max(500, { message: "Description cannot exceed 500 characters" }),
-  color: z.string().min(4).max(9),
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, { message: "Please enter a valid hex color code" }),
 });
 
 export default function NewCommunityPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
 
+  // Initialize form with validation
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -63,86 +63,105 @@ export default function NewCommunityPage() {
     },
   });
 
-  const watchedColor = form.watch("color");
-
-  function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // Auto-generate slug from the name
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const name = e.target.value;
-    form.setValue("name", name);
+    const generatedSlug = name
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-");
     
-    // Auto-generate slug from name
-    const slug = name.toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "") // Remove special characters
-      .replace(/\s+/g, "-")         // Replace spaces with hyphens
-      .replace(/-+/g, "-");         // Replace multiple hyphens with a single hyphen
-      
-    form.setValue("slug", slug);
-  }
+    form.setValue("slug", generatedSlug);
+  };
 
+  // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (!user) {
       toast({
         variant: "destructive",
         title: "Authentication required",
-        description: "You must be logged in to create a community"
+        description: "You must be logged in to create a community",
       });
       navigate("/auth");
       return;
     }
 
     setIsSubmitting(true);
-    
+
     try {
-      console.log("Creating community with values:", values);
-      
-      // Insert the community into Supabase groups table
-      const { data, error } = await supabase
+      // Check if a community with this slug already exists
+      const { data: existingGroup, error: checkError } = await supabase
         .from("groups")
-        .insert({
-          name: values.name,
-          slug: values.slug,
-          description: values.description,
-          color: values.color,
-        })
-        .select();
+        .select("slug")
+        .eq("slug", values.slug)
+        .single();
+
+      if (existingGroup) {
+        form.setError("slug", {
+          message: "This community slug already exists. Please choose another.",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Insert the new community into Supabase
+      const { error } = await supabase.from("groups").insert({
+        name: values.name,
+        slug: values.slug,
+        description: values.description,
+        color: values.color,
+      });
 
       if (error) {
-        console.error("Supabase error details:", error);
+        console.error("Error creating community:", error);
         throw error;
       }
-      
+
       toast({
-        title: "Community created successfully!",
-        description: "Your community has been created."
+        title: "Community created!",
+        description: `${values.name} has been successfully created.`,
       });
-      
-      // Navigate back to communities page
+
+      // Navigate to the communities page
       navigate("/communities");
-      
     } catch (error: any) {
-      console.error("Error creating community:", error);
+      console.error("Error submitting community:", error);
       toast({
         variant: "destructive",
         title: "Failed to create community",
-        description: error.message || "Please try again"
+        description: error.message || "Please try again",
       });
     } finally {
       setIsSubmitting(false);
     }
   }
 
+  // Predefined color options
+  const colorOptions = [
+    { name: "Purple", value: "#9b87f5" },
+    { name: "Blue", value: "#1EAEDB" },
+    { name: "Lavender", value: "#7E69AB" },
+    { name: "Peach", value: "#FEC6A1" },
+    { name: "Mint", value: "#F2FCE2" },
+    { name: "Pink", value: "#FFDEE2" },
+    { name: "Yellow", value: "#FEF7CD" },
+    { name: "Sky", value: "#D3E4FD" },
+  ];
+
   return (
-    <div className="container max-w-4xl py-10 px-4 md:px-6">
-      <h1 className="text-3xl font-bold mb-6">Create a New Community</h1>
+    <div className="container max-w-3xl py-10 px-4 md:px-6">
+      <h1 className="text-3xl font-bold mb-6">Create New Community</h1>
+
       <Card>
         <CardHeader>
-          <CardTitle>New Community</CardTitle>
+          <CardTitle>Community Details</CardTitle>
           <CardDescription>
-            Fill out the form below to create a new community. Communities are spaces where users can discuss specific topics.
+            Fill out the form below to create a new community for academic discussions.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
                 name="name"
@@ -151,19 +170,22 @@ export default function NewCommunityPage() {
                     <FormLabel>Community Name</FormLabel>
                     <FormControl>
                       <Input 
-                        placeholder="E.g., Mathematics" 
+                        placeholder="E.g., Quantum Physics" 
                         {...field} 
-                        onChange={(e) => handleNameChange(e)}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          handleNameChange(e);
+                        }}
                       />
                     </FormControl>
                     <FormDescription>
-                      A clear, descriptive name for your community.
+                      Choose a descriptive name for your community.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="slug"
@@ -172,18 +194,18 @@ export default function NewCommunityPage() {
                     <FormLabel>Community URL Slug</FormLabel>
                     <FormControl>
                       <Input 
-                        placeholder="E.g., mathematics" 
-                        {...field}
+                        placeholder="E.g., quantum-physics" 
+                        {...field} 
                       />
                     </FormControl>
                     <FormDescription>
-                      This will be used in the URL: /communities/{field.value || 'slug'}
+                      This will be used in the URL for your community. Use only lowercase letters, numbers, and hyphens.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="description"
@@ -198,47 +220,59 @@ export default function NewCommunityPage() {
                       />
                     </FormControl>
                     <FormDescription>
-                      Explain the purpose and topics of your community.
+                      Provide details about the topics covered in this community.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="color"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Theme Color</FormLabel>
-                    <FormControl>
-                      <div className="flex items-center gap-4">
-                        <div 
-                          className="w-10 h-10 rounded-full cursor-pointer border"
-                          style={{ backgroundColor: watchedColor }}
-                          onClick={() => setShowColorPicker(!showColorPicker)}
+                    <FormLabel>Community Color</FormLabel>
+                    <div className="flex flex-wrap gap-3 mb-3">
+                      {colorOptions.map((color) => (
+                        <div
+                          key={color.value}
+                          className={`w-10 h-10 rounded-full cursor-pointer border-2 ${
+                            field.value === color.value
+                              ? "border-primary"
+                              : "border-transparent"
+                          }`}
+                          style={{ backgroundColor: color.value }}
+                          onClick={() => form.setValue("color", color.value)}
+                          title={color.name}
                         />
-                        <Input 
-                          value={field.value}
-                          onChange={field.onChange}
-                          placeholder="#9b87f5"
+                      ))}
+                    </div>
+                    <FormControl>
+                      <div className="flex items-center gap-3">
+                        <Input {...field} />
+                        <div
+                          className="w-8 h-8 rounded"
+                          style={{ backgroundColor: field.value }}
                         />
                       </div>
                     </FormControl>
-                    {showColorPicker && (
-                      <div className="mt-2">
-                        <HexColorPicker color={field.value} onChange={field.onChange} />
-                      </div>
-                    )}
                     <FormDescription>
-                      Choose a color that represents your community.
+                      Select a color to represent your community.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
-              <div className="flex justify-end">
+
+              <div className="flex justify-end gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigate("/communities")}
+                >
+                  Cancel
+                </Button>
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting ? "Creating..." : "Create Community"}
                 </Button>

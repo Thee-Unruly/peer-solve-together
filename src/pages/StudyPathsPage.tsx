@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "@/components/ui/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -197,19 +196,46 @@ export default function StudyPathsPage() {
   
   const createStudyPath = async () => {
     if (!user) {
-      toast.error("You must be signed in to create a study path");
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "You must be signed in to create a study path"
+      });
       navigate("/auth");
       return;
     }
     
     if (!newPathTitle || !newPathSubject) {
-      toast.error("Title and subject are required");
+      toast({
+        variant: "destructive",
+        title: "Required Fields Missing",
+        description: "Title and subject are required"
+      });
       return;
     }
     
     setIsCreating(true);
     
     try {
+      console.log("Creating study path with user:", user.id);
+      
+      // First check if user profile exists
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      // If profile doesn't exist, create one
+      if (!profileData) {
+        await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            username: user.email?.split('@')[0] || 'user',
+          });
+      }
+      
       // Create a new entry in the posts table as a study path
       const { data, error } = await supabase
         .from('posts')
@@ -222,9 +248,16 @@ export default function StudyPathsPage() {
         })
         .select();
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error details:", error);
+        throw error;
+      }
       
-      toast.success("Study path created successfully!");
+      toast({
+        title: "Success!",
+        description: "Study path created successfully!"
+      });
+      
       setDialogOpen(false);
       setNewPathTitle("");
       setNewPathDescription("");
@@ -236,9 +269,13 @@ export default function StudyPathsPage() {
       } else {
         fetchStudyPaths();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating study path:", error);
-      toast.error("Failed to create study path");
+      toast({
+        variant: "destructive",
+        title: "Failed to create study path",
+        description: error.message || "Please try again"
+      });
     } finally {
       setIsCreating(false);
     }
