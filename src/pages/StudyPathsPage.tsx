@@ -188,7 +188,10 @@ export default function StudyPathsPage() {
       }
     } catch (error) {
       console.error("Error fetching study paths:", error);
-      toast.error("Failed to load study paths");
+      toast({
+        title: "Error",
+        description: "Failed to load study paths",
+        variant: "destructive"});
     } finally {
       setIsLoading(false);
     }
