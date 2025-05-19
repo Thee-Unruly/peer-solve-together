@@ -153,7 +153,11 @@ export default function CommunitiesPage() {
         }
       } catch (error) {
         console.error("Error fetching communities:", error);
-        toast.error("Failed to load communities");
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load communities"
+        });
       } finally {
         setIsLoading(false);
       }
