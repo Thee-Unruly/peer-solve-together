@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { toast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/sonner";
 import {
   Dialog,
   DialogContent,
@@ -91,13 +92,8 @@ export default function StudyPathsPage() {
       if (data && data.length > 0) {
         // Transform posts into study paths
         const paths = await Promise.all(data.map(async (post) => {
-          // Count associated questions (e.g. from a linking table or posts with a specific tag)
-          const { count: questionCount } = await supabase
-            .from('questions')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', post.user_id);
-            
-          const { count: resourceCount } = await supabase
+          // Count associated questions using comments table (we use comments to link questions)
+          const { data: commentData, count: resourceCount } = await supabase
             .from('comments')
             .select('*', { count: 'exact', head: true })
             .eq('post_id', post.id);
@@ -113,8 +109,8 @@ export default function StudyPathsPage() {
             title: post.title,
             description: post.body || "A curated study path",
             subject: post.image_url || "General", // Using image_url to store subject
-            questionCount: questionCount || 0,
-            resourceCount: resourceCount || 0,
+            questionCount: resourceCount || 0, // Using comments count as question count
+            resourceCount: 0, // Placeholder for now
             author: {
               name: post.profiles?.username || "Anonymous",
               avatar: post.profiles?.avatar_url || "",
@@ -126,72 +122,15 @@ export default function StudyPathsPage() {
         
         setStudyPaths(paths);
       } else {
-        // If no study paths found, use mock data
-        setStudyPaths([
-          {
-            id: "calculus-101",
-            title: "Calculus Fundamentals",
-            description: "A comprehensive introduction to differential and integral calculus for beginners.",
-            subject: "Mathematics",
-            questionCount: 24,
-            resourceCount: 8,
-            author: {
-              name: "Prof. Smith",
-              avatar: "",
-              id: user?.id
-            },
-            followers: 342,
-          },
-          {
-            id: "python-basics",
-            title: "Python Programming: Zero to Hero",
-            description: "Learn Python from scratch with hands-on coding problems and examples.",
-            subject: "Computer Science",
-            questionCount: 42,
-            resourceCount: 15,
-            author: {
-              name: "Coding Master",
-              avatar: "",
-              id: user?.id
-            },
-            followers: 578,
-          },
-          {
-            id: "organic-chemistry",
-            title: "Organic Chemistry Essentials",
-            description: "Master the fundamentals of organic chemistry with this curated study path.",
-            subject: "Chemistry",
-            questionCount: 36,
-            resourceCount: 12,
-            author: {
-              name: "Dr. Martinez",
-              avatar: "",
-              id: user?.id
-            },
-            followers: 213,
-          },
-          {
-            id: "physics-mechanics",
-            title: "Classical Mechanics Mastery",
-            description: "From Newton's laws to Hamiltonian mechanics - a comprehensive study guide.",
-            subject: "Physics",
-            questionCount: 30,
-            resourceCount: 10,
-            author: {
-              name: "Physics Pro",
-              avatar: "",
-              id: user?.id
-            },
-            followers: 189,
-          },
-        ]);
+        setStudyPaths([]);
       }
     } catch (error) {
       console.error("Error fetching study paths:", error);
       toast({
         title: "Error",
         description: "Failed to load study paths",
-        variant: "destructive"});
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -200,9 +139,9 @@ export default function StudyPathsPage() {
   const createStudyPath = async () => {
     if (!user) {
       toast({
-        variant: "destructive",
         title: "Authentication Required",
-        description: "You must be signed in to create a study path"
+        description: "You must be signed in to create a study path",
+        variant: "destructive"
       });
       navigate("/auth");
       return;
@@ -210,9 +149,9 @@ export default function StudyPathsPage() {
     
     if (!newPathTitle || !newPathSubject) {
       toast({
-        variant: "destructive",
         title: "Required Fields Missing",
-        description: "Title and subject are required"
+        description: "Title and subject are required",
+        variant: "destructive"
       });
       return;
     }
@@ -236,6 +175,7 @@ export default function StudyPathsPage() {
           .insert({
             id: user.id,
             username: user.email?.split('@')[0] || 'user',
+            avatar_url: ''
           });
       }
       
@@ -268,6 +208,7 @@ export default function StudyPathsPage() {
       
       // Navigate to the newly created path
       if (data && data[0]) {
+        console.log("Successfully created path, navigating to:", data[0].id);
         navigate(`/study-paths/${data[0].id}`);
       } else {
         fetchStudyPaths();
@@ -275,9 +216,9 @@ export default function StudyPathsPage() {
     } catch (error: any) {
       console.error("Error creating study path:", error);
       toast({
-        variant: "destructive",
         title: "Failed to create study path",
-        description: error.message || "Please try again"
+        description: error.message || "Please try again",
+        variant: "destructive"
       });
     } finally {
       setIsCreating(false);
